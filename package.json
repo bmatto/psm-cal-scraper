@@ -1,0 +1,27 @@
+{
+  "name": "psm-cal-scraper",
+  "version": "1.0.0",
+  "description": "Scrapes Portsmouth NH municipal meetings calendar and syncs to Google Calendar",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "setup": "node src/oauth-setup.js",
+    "scrape": "node src/scraper.js",
+    "sync": "node src/sync.js",
+    "test": "node src/test-scraper.js"
+  },
+  "keywords": [
+    "calendar",
+    "scraper",
+    "portsmouth",
+    "google-calendar"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "googleapis": "^129.0.0",
+    "puppeteer": "^24.35.0",
+    "dotenv": "^16.3.1",
+    "open": "^10.0.3"
+  }
+}
