@@ -13,11 +13,164 @@ if ! command -v gh &> /dev/null; then
     exit 1
 fi
 
-# Check if logged in
-if ! gh auth status &> /dev/null; then
-    echo "🔐 Authenticating with GitHub..."
-    gh auth login
+# Check current GitHub authentication
+echo "🔐 Checking GitHub authentication..."
+if gh auth status &> /dev/null; then
+    CURRENT_USER=$(gh api user -q .login 2>/dev/null || echo "unknown")
+    CURRENT_EMAIL=$(gh api user -q .email 2>/dev/null || echo "unknown")
+    echo "✓ Currently logged in as: $CURRENT_USER ($CURRENT_EMAIL)"
+    echo ""
+
+    # Check if this is the work account
+    if [[ "$CURRENT_USER" == *"hubspot"* ]] || [[ "$CURRENT_USER" == "bmatto_hubspot" ]]; then
+        echo "⚠️  WARNING: You're logged into your WORK account ($CURRENT_USER)"
+        echo "   This appears to be a personal project."
+        echo ""
+        echo "To deploy to your personal account (bmatto):"
+        echo "  1. Logout of work account: gh auth logout"
+        echo "  2. Login to personal account: gh auth login"
+        echo "     (Use bmatto@gmail.com in the browser)"
+        echo ""
+        read -p "Switch accounts now? (Y/n): " SWITCH_NOW
+        SWITCH_NOW=${SWITCH_NOW:-Y}
+
+        if [[ $SWITCH_NOW =~ ^[Yy]$ ]]; then
+            echo ""
+            echo "Logging out..."
+            gh auth logout --hostname github.com || true
+
+            echo ""
+            echo "Now logging in with personal account..."
+            echo "👉 IMPORTANT: Login with bmatto@gmail.com in the browser!"
+            echo ""
+            read -p "Press Enter to open browser login..."
+
+            gh auth login --hostname github.com --web
+
+            # Verify new login
+            if ! gh auth status &> /dev/null; then
+                echo "❌ Login failed. Please try again."
+                exit 1
+            fi
+
+            CURRENT_USER=$(gh api user -q .login)
+            echo ""
+            echo "✓ Successfully logged in as: $CURRENT_USER"
+
+            if [[ "$CURRENT_USER" == *"hubspot"* ]] || [[ "$CURRENT_USER" == "bmatto_hubspot" ]]; then
+                echo "❌ Still logged into work account!"
+                echo "   Please ensure you login with bmatto@gmail.com"
+                exit 1
+            fi
+        else
+            echo ""
+            echo "❌ Cannot proceed with work account for personal project."
+            echo "   Run 'gh auth logout' then 'gh auth login' with personal account."
+            exit 1
+        fi
+    else
+        # Not a work account, but confirm anyway
+        read -p "Is this the correct account for this project? (Y/n): " CORRECT_ACCOUNT
+        CORRECT_ACCOUNT=${CORRECT_ACCOUNT:-Y}
+
+        if [[ ! $CORRECT_ACCOUNT =~ ^[Yy]$ ]]; then
+            echo ""
+            echo "Please switch accounts:"
+            echo "  gh auth logout"
+            echo "  gh auth login"
+            exit 1
+        fi
+    fi
+else
+    echo "❌ Not logged in to GitHub."
+    echo ""
+    echo "Logging in now..."
+    echo "👉 IMPORTANT: Login with bmatto@gmail.com in the browser!"
+    echo ""
+    read -p "Press Enter to open browser login..."
+
+    gh auth login --hostname github.com --web
+
+    if ! gh auth status &> /dev/null; then
+        echo "❌ Login failed"
+        exit 1
+    fi
+
+    CURRENT_USER=$(gh api user -q .login)
+    echo "✓ Logged in as: $CURRENT_USER"
+
+    if [[ "$CURRENT_USER" == *"hubspot"* ]] || [[ "$CURRENT_USER" == "bmatto_hubspot" ]]; then
+        echo "❌ Logged into work account! Please use personal account."
+        exit 1
+    fi
 fi
+
+echo ""
+
+# Set up local git config to match GitHub account
+echo "📝 Setting up git config for this repository..."
+GITHUB_USER=$(gh api user -q .login)
+GITHUB_NAME=$(gh api user -q .name 2>/dev/null || echo "")
+
+# Don't try to fetch email from API (often fails with 404)
+# Instead, prompt or use defaults
+if [ -z "$GITHUB_NAME" ]; then
+    GITHUB_NAME=$GITHUB_USER
+fi
+
+# Check if local config already exists
+EXISTING_EMAIL=$(git config --local user.email 2>/dev/null || echo "")
+
+if [ -n "$EXISTING_EMAIL" ]; then
+    echo "Current local git config:"
+    echo "  Name: $(git config --local user.name)"
+    echo "  Email: $EXISTING_EMAIL"
+    echo ""
+    read -p "Keep this config? (Y/n): " KEEP_CONFIG
+    KEEP_CONFIG=${KEEP_CONFIG:-Y}
+
+    if [[ $KEEP_CONFIG =~ ^[Yy]$ ]]; then
+        echo "✓ Using existing config"
+    else
+        read -p "Enter your git name (e.g., Brian Matto): " GITHUB_NAME
+        read -p "Enter your git email (e.g., bmatto@gmail.com): " GITHUB_EMAIL
+        git config --local user.name "$GITHUB_NAME"
+        git config --local user.email "$GITHUB_EMAIL"
+        echo "✓ Git config updated"
+    fi
+else
+    # No local config, set it up
+    echo "No local git config found."
+
+    # Smart defaults based on username
+    if [ "$GITHUB_USER" == "bmatto" ]; then
+        DEFAULT_NAME="Brian Matto"
+        DEFAULT_EMAIL="bmatto@gmail.com"
+    else
+        DEFAULT_NAME=$GITHUB_NAME
+        DEFAULT_EMAIL=""
+    fi
+
+    read -p "Enter your git name (default: $DEFAULT_NAME): " INPUT_NAME
+    GITHUB_NAME=${INPUT_NAME:-$DEFAULT_NAME}
+
+    read -p "Enter your git email (e.g., bmatto@gmail.com): " GITHUB_EMAIL
+
+    while [ -z "$GITHUB_EMAIL" ]; do
+        echo "Email is required!"
+        read -p "Enter your git email: " GITHUB_EMAIL
+    done
+
+    git config --local user.name "$GITHUB_NAME"
+    git config --local user.email "$GITHUB_EMAIL"
+
+    echo ""
+    echo "✓ Git config set:"
+    echo "  Name: $GITHUB_NAME"
+    echo "  Email: $GITHUB_EMAIL"
+fi
+
+echo ""
 
 # Check if credentials exist
 if [ ! -f "config/credentials.json" ]; then
@@ -66,24 +219,85 @@ else
 fi
 
 echo ""
+echo "📦 Summary before deployment:"
+echo "   GitHub user: $(gh api user -q .login)"
+echo "   Git committer: $(git config user.name) <$(git config user.email)>"
+echo "   Repository: $REPO_NAME"
+echo "   Visibility: $VISIBILITY"
+echo ""
+read -p "Everything look correct? (Y/n): " CONFIRM
+CONFIRM=${CONFIRM:-Y}
+
+if [[ ! $CONFIRM =~ ^[Yy]$ ]]; then
+    echo "❌ Deployment cancelled"
+    exit 1
+fi
+
+echo ""
 echo "📦 Creating GitHub repository..."
+
+# Get the GitHub username we'll use
+GITHUB_USER=$(gh api user -q .login)
 
 # Initialize git if needed
 if [ ! -d ".git" ]; then
+    echo "Initializing git repository..."
     git init
     git add .
     git commit -m "Initial commit: Portsmouth calendar scraper"
 fi
 
-# Create GitHub repo
-gh repo create "$REPO_NAME" $VISIBILITY --source=. --push || {
-    echo "⚠️  Repository might already exist. Continuing..."
+# Remove existing origin if it exists and points to wrong account or uses SSH
+if git remote get-url origin &> /dev/null; then
+    CURRENT_REMOTE=$(git remote get-url origin)
+    echo "Current remote: $CURRENT_REMOTE"
+
+    # Check if remote uses SSH (git@github.com) - we want HTTPS
+    if [[ "$CURRENT_REMOTE" == git@github.com* ]]; then
+        echo "⚠️  Remote uses SSH, switching to HTTPS for gh CLI compatibility..."
+        git remote remove origin
+    elif [[ ! "$CURRENT_REMOTE" == *"$GITHUB_USER"* ]]; then
+        echo "⚠️  Remote points to different account, removing..."
+        git remote remove origin
+    fi
+fi
+
+# Add remote if not exists (always use HTTPS)
+if ! git remote get-url origin &> /dev/null; then
+    echo "Setting remote to: https://github.com/$GITHUB_USER/$REPO_NAME.git"
+    git remote add origin "https://github.com/$GITHUB_USER/$REPO_NAME.git"
+fi
+
+# Create GitHub repo (don't use --push flag to have more control)
+echo "Creating repository on GitHub..."
+gh repo create "$GITHUB_USER/$REPO_NAME" $VISIBILITY || {
+    echo "⚠️  Repository might already exist. Checking..."
+    if gh repo view "$GITHUB_USER/$REPO_NAME" &> /dev/null; then
+        echo "✓ Repository exists, proceeding..."
+    else
+        echo "❌ Failed to create repository"
+        exit 1
+    fi
 }
 
-# Push to remote
-git remote get-url origin &> /dev/null || git remote add origin "https://github.com/$(gh api user -q .login)/$REPO_NAME.git"
+# Rename branch to main
 git branch -M main
-git push -u origin main
+
+# Push to remote
+echo "Pushing to GitHub..."
+echo "Using account: $GITHUB_USER"
+if git push -u origin main; then
+    echo "✓ Successfully pushed to GitHub!"
+else
+    echo ""
+    echo "❌ Push failed!"
+    echo ""
+    echo "This might be a credentials issue. Try:"
+    echo "  1. Check gh auth: gh auth status"
+    echo "  2. Refresh credentials: gh auth refresh -s repo"
+    echo "  3. Or re-authenticate: gh auth login"
+    exit 1
+fi
 
 echo ""
 echo "🔐 Setting up GitHub secrets..."

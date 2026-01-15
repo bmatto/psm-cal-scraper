@@ -8,7 +8,10 @@
     "setup": "node src/oauth-setup.js",
     "scrape": "node src/scraper.js",
     "sync": "node src/sync.js",
-    "test": "node src/test-scraper.js"
+    "test": "node src/test-scraper.js",
+    "check-account": "./scripts/check-github-account.sh",
+    "switch-account": "./scripts/switch-to-personal.sh",
+    "deploy": "./scripts/deploy-to-github.sh"
   },
   "keywords": [
     "calendar",
