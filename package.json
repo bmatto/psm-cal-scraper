@@ -22,9 +22,11 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "googleapis": "^129.0.0",
-    "puppeteer": "^24.35.0",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "dotenv": "^16.3.1",
-    "open": "^10.0.3"
+    "googleapis": "^129.0.0",
+    "open": "^10.0.3",
+    "puppeteer": "^24.35.0"
   }
 }
