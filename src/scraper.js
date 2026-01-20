@@ -1,6 +1,8 @@
 import puppeteer from 'puppeteer';
+import { fromZonedTime } from 'date-fns-tz';
 
 const CALENDAR_URL = 'https://www.portsmouthnh.gov/city-municipal-meetings-calendar';
+const PORTSMOUTH_TZ = 'America/New_York';
 
 /**
  * Scrapes the Portsmouth municipal meetings calendar
@@ -134,8 +136,10 @@ export async function scrapeMeetings() {
  * @returns {Object} Formatted meeting data
  */
 export function formatMeeting(meeting) {
-  // Parse date - convert "January 15, 2026" to Date object
-  let startDateTime = new Date(meeting.date);
+  // Parse date string - "January 15, 2026"
+  const dateObj = new Date(meeting.date + ' 00:00:00');
+  let hours = 9; // Default to 9 AM
+  let minutes = 0;
 
   // Parse time if available
   if (meeting.time) {
@@ -143,23 +147,26 @@ export function formatMeeting(meeting) {
     const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM|am|pm)/i);
 
     if (match) {
-      let hours = parseInt(match[1]);
-      const minutes = parseInt(match[2]);
+      hours = parseInt(match[1]);
+      minutes = parseInt(match[2]);
       const meridiem = match[3].toUpperCase();
 
       if (meridiem === 'PM' && hours !== 12) hours += 12;
       if (meridiem === 'AM' && hours === 12) hours = 0;
-
-      startDateTime.setHours(hours, minutes, 0, 0);
     }
-  } else {
-    // Default to 9 AM if no time specified
-    startDateTime.setHours(9, 0, 0, 0);
   }
 
+  // Create date in Portsmouth timezone (America/New_York)
+  // This ensures that 7:00 PM means 7:00 PM EST/EDT, regardless of where the code runs
+  const year = dateObj.getFullYear();
+  const month = dateObj.getMonth();
+  const day = dateObj.getDate();
+
+  const localDate = new Date(year, month, day, hours, minutes, 0, 0);
+  const startDateTime = fromZonedTime(localDate, PORTSMOUTH_TZ);
+
   // Assume 2 hour duration
-  const endDateTime = new Date(startDateTime);
-  endDateTime.setHours(endDateTime.getHours() + 2);
+  const endDateTime = new Date(startDateTime.getTime() + 2 * 60 * 60 * 1000);
 
   // Create description with additional details
   let description = `Portsmouth Municipal Meeting\n\n`;
