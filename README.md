@@ -306,4 +306,4 @@ MIT
 
 ## Acknowledgments
 
-Built for the Portsmouth, NH community to make municipal meetings more accessible.
+Built for the Portsmouth, NH community to make municipal meetings more accessible ❤️.
